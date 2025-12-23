@@ -1,0 +1,17 @@
+{
+  "name": "cripps-bot",
+  "version": "7.0.0-ULTIMATE",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@discordjs/voice": "^0.16.1",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "libsodium-wrappers": "^0.7.13",
+    "node-cron": "^3.0.3",
+    "pg": "^8.11.3"
+  }
+}
