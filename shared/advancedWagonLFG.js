@@ -6,8 +6,12 @@
  * ╚███╔███╔╝██║  ██║╚██████╔╝╚██████╔╝██║ ╚████║    ███████╗██║     ╚██████╔╝
  *  ╚══╝╚══╝ ╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝    ╚══════╝╚═╝      ╚═════╝ 
  * 
- * ADVANCED WAGON DELIVERY LFG SYSTEM
- * Trader wagon duplication & delivery matchmaking
+ * ADVANCED WAGON DELIVERY LFG SYSTEM v2
+ * - Up to 6 players (1 host + 5 crew)
+ * - Host can kick players
+ * - Blacklist per session
+ * - DM notifications
+ * - Detailed descriptions
  */
 
 const { 
@@ -25,44 +29,67 @@ const {
 // ============================================
 
 const WAGON_CONFIG = {
-  // Delivery types
+  // Delivery types with descriptions
   deliveryTypes: {
-    'local': { name: '📍 Local Delivery', payout: 500, distance: 'Short', risk: 'Low' },
-    'distant': { name: '🗺️ Distant Delivery', payout: 625, distance: 'Long', risk: 'High (PvP enabled)' }
+    'local': { 
+      name: '📍 Local Delivery', 
+      payout: 500, 
+      description: 'Short distance, safe delivery. No PvP risk. Lower payout but guaranteed.'
+    },
+    'distant': { 
+      name: '🗺️ Distant Delivery', 
+      payout: 625, 
+      description: 'Long distance, HIGH RISK! Other players can attack. 25% more payout.'
+    }
   },
   
-  // Wagon sizes
+  // Wagon sizes with descriptions
   wagonSizes: {
-    'small': { name: '📦 Small Wagon', goods: 25, emoji: '📦' },
-    'medium': { name: '📦📦 Medium Wagon', goods: 50, emoji: '🛒' },
-    'large': { name: '📦📦📦 Large Wagon', goods: 100, emoji: '🚚' }
+    'small': { 
+      name: '📦 Small Wagon', 
+      goods: 25, 
+      payout: 250,
+      description: '25 goods capacity. Quick fill, lower payout. Good for starting out.'
+    },
+    'medium': { 
+      name: '📦📦 Medium Wagon', 
+      goods: 50,
+      payout: 500,
+      description: '50 goods capacity. Balanced option. Requires Medium Delivery Wagon.'
+    },
+    'large': { 
+      name: '🚚 Large Wagon', 
+      goods: 100,
+      payout: 625,
+      description: '100 goods capacity. Max payout! Requires Large Delivery Wagon upgrade.'
+    }
   },
   
   // Dupe method info
   dupeInfo: {
     name: 'Wagon Dupe Glitch',
     dupeCount: 11,
-    timeEstimate: '15 minutes',
-    payoutPerDupe: 250 // Per dupe for distant
+    description: 'Duplicate your wagon 11 times for massive profits! Requires 2+ players.'
   },
   
-  // Session settings
+  // Session settings - UP TO 6 PLAYERS
   minPlayers: 2,
-  maxPlayers: 4,
-  sessionTimeout: 45 * 60 * 1000, // 45 minutes
+  maxPlayers: 6, // 1 host + 5 crew
+  sessionTimeout: 45 * 60 * 1000,
   voiceChannelTimeout: 10 * 60 * 1000
 };
 
 // Active sessions storage
 const activeSessions = new Map();
 const userCooldowns = new Map();
+const kickedUsers = new Map(); // sessionId -> Set of kicked user IDs
 
 // ============================================
 // INITIALIZE LFG SYSTEM
 // ============================================
 
 function initialize(client) {
-  console.log('[WAGON LFG] Initializing advanced Wagon LFG system...');
+  console.log('[WAGON LFG] Initializing advanced Wagon LFG system v2...');
   
   client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
@@ -75,7 +102,7 @@ function initialize(client) {
   
   setInterval(() => checkSessionTimeouts(client), 60000);
   
-  console.log('[WAGON LFG] ✅ Advanced Wagon LFG system initialized');
+  console.log('[WAGON LFG] ✅ Advanced Wagon LFG v2 initialized (up to 6 players)');
 }
 
 // ============================================
@@ -96,7 +123,7 @@ async function createSession(message, client) {
   // Check existing session
   for (const [sessionId, session] of activeSessions) {
     if (session.host === userId) {
-      return message.reply(`❌ You already have an active session! End it first with \`?endwagon\``);
+      return message.reply(`❌ You already have an active session! Use the Cancel button or wait for it to expire.`);
     }
   }
   
@@ -115,8 +142,8 @@ async function createSession(message, client) {
     platform: platform,
     players: [{ userId: userId, name: message.author.username }],
     deliveryType: null,
-    wagonSize: 'large', // Default to large
-    isDupe: true, // Default to dupe method
+    wagonSize: 'large',
+    isDupe: true,
     status: 'setup',
     voiceChannel: null,
     messageId: null,
@@ -128,7 +155,10 @@ async function createSession(message, client) {
     deliveriesCompleted: 0
   };
   
-  const setupEmbed = await createSetupEmbed(session, guild);
+  // Initialize kicked users set for this session
+  kickedUsers.set(sessionId, new Set());
+  
+  const setupEmbed = createSetupEmbed(session);
   const setupComponents = createSetupComponents(sessionId, session);
   
   const msg = await message.channel.send({ 
@@ -143,37 +173,57 @@ async function createSession(message, client) {
 }
 
 // ============================================
-// EMBEDS
+// SETUP EMBED
 // ============================================
 
-async function createSetupEmbed(session, guild) {
-  const host = await guild.members.fetch(session.host).catch(() => null);
+function createSetupEmbed(session) {
+  const deliveryInfo = session.deliveryType 
+    ? WAGON_CONFIG.deliveryTypes[session.deliveryType]
+    : null;
+  const wagonInfo = WAGON_CONFIG.wagonSizes[session.wagonSize];
   
   const embed = new EmbedBuilder()
     .setTitle('🛒 WAGON DELIVERY - SETUP')
-    .setDescription(`**Host:** ${host?.user.tag || 'Unknown'}\n**Platform:** ${session.platform}\n\n*Configure your wagon run below*`)
+    .setDescription(
+      `**Host:** ${session.hostName}\n` +
+      `**Platform:** ${session.platform}\n\n` +
+      `*Configure your wagon run below*`
+    )
     .addFields(
-      { name: '📍 Delivery Type', value: session.deliveryType ? WAGON_CONFIG.deliveryTypes[session.deliveryType].name : '❓ Not selected', inline: true },
-      { name: '📦 Wagon Size', value: WAGON_CONFIG.wagonSizes[session.wagonSize].name, inline: true },
-      { name: '🔄 Dupe Method', value: session.isDupe ? '✅ Yes (11 dupes)' : '❌ No (single delivery)', inline: true }
+      { 
+        name: '📍 Delivery Type', 
+        value: deliveryInfo ? `${deliveryInfo.name}\n*${deliveryInfo.description}*` : '❓ Not selected', 
+        inline: false 
+      },
+      { 
+        name: '📦 Wagon Size', 
+        value: `${wagonInfo.name}\n*${wagonInfo.description}*`, 
+        inline: false 
+      },
+      { 
+        name: '🔄 Dupe Method', 
+        value: session.isDupe 
+          ? `✅ **ON** (11 dupes)\n*${WAGON_CONFIG.dupeInfo.description}*` 
+          : '❌ OFF (single delivery)', 
+        inline: false 
+      }
     )
     .setColor(0x8B4513)
     .setFooter({ text: 'Select your options, then click "Start Recruiting"' })
     .setTimestamp();
   
-  if (session.deliveryType && session.isDupe) {
-    const basePayoutPerDupe = session.deliveryType === 'distant' ? 250 : 200;
-    const totalEstimate = basePayoutPerDupe * 11;
-    embed.addFields({ name: '💰 Estimated Earnings', value: `~$${totalEstimate.toLocaleString()} per person (11 dupes)`, inline: false });
-  }
-  
   return embed;
 }
 
-async function createRecruitingEmbed(session, guild) {
-  const host = await guild.members.fetch(session.host).catch(() => null);
-  const elapsed = session.startedAt ? formatTime(Date.now() - session.startedAt) : '0:00';
+// ============================================
+// RECRUITING EMBED
+// ============================================
+
+function createRecruitingEmbed(session) {
+  const deliveryInfo = WAGON_CONFIG.deliveryTypes[session.deliveryType];
+  const wagonInfo = WAGON_CONFIG.wagonSizes[session.wagonSize];
   
+  // Build player list (up to 6 slots)
   let playerList = '';
   for (let i = 0; i < WAGON_CONFIG.maxPlayers; i++) {
     if (session.players[i]) {
@@ -181,77 +231,103 @@ async function createRecruitingEmbed(session, guild) {
       const isHost = player.userId === session.host;
       playerList += `${i + 1}. ${isHost ? '👑' : '🤠'} **${player.name}** ${isHost ? '(Host)' : ''}\n`;
     } else {
-      playerList += `${i + 1}. ⬜ *Empty Slot*\n`;
+      playerList += `${i + 1}. ⬜ *Open Slot*\n`;
     }
   }
   
-  const deliveryInfo = WAGON_CONFIG.deliveryTypes[session.deliveryType];
-  const wagonInfo = WAGON_CONFIG.wagonSizes[session.wagonSize];
-  
-  const embed = new EmbedBuilder()
-    .setTitle(`🛒 WAGON ${session.isDupe ? 'DUPE ' : ''}RUN - RECRUITING`)
-    .setDescription(`
-**━━━━━━━━━━━━━━━━━━━━━━━━━━━━**
-${wagonInfo.emoji} **Wagon:** ${wagonInfo.name}
-📍 **Delivery:** ${deliveryInfo.name}
-🔄 **Method:** ${session.isDupe ? 'Dupe Glitch (11x)' : 'Single Delivery'}
-🎮 **Platform:** ${session.platform} Only
-**━━━━━━━━━━━━━━━━━━━━━━━━━━━━**
-    `)
-    .addFields(
-      { name: `🤠 Posse (${session.players.length}/${WAGON_CONFIG.maxPlayers})`, value: playerList, inline: false }
-    )
-    .setColor(session.players.length >= WAGON_CONFIG.minPlayers ? 0x00FF00 : 0xCD853F)
-    .setFooter({ text: `Session ID: ${session.id.slice(-8)} • ⏱️ ${elapsed}` })
-    .setTimestamp();
-  
-  if (session.voiceChannel) {
-    embed.addFields({ name: '🔊 Voice Channel', value: `<#${session.voiceChannel}>`, inline: true });
+  // Calculate potential earnings
+  let potentialEarnings = wagonInfo.payout;
+  if (session.deliveryType === 'distant') {
+    potentialEarnings = Math.floor(potentialEarnings * 1.25);
+  }
+  if (session.isDupe) {
+    potentialEarnings = potentialEarnings * 11;
   }
   
+  const embed = new EmbedBuilder()
+    .setTitle('🛒 WAGON DELIVERY - RECRUITING')
+    .setDescription(
+      `**Host:** ${session.hostName} | **Platform:** ${session.platform}\n\n` +
+      `${deliveryInfo.name} • ${wagonInfo.name} • ${session.isDupe ? 'Dupe: ON' : 'Single Run'}`
+    )
+    .addFields(
+      { name: '👥 Posse', value: playerList, inline: true },
+      { name: '📊 Info', value: 
+        `Slots: ${session.players.length}/${WAGON_CONFIG.maxPlayers}\n` +
+        `Potential: $${potentialEarnings.toLocaleString()}\n` +
+        `Status: ${session.status === 'in_progress' ? '🟢 IN PROGRESS' : '🟡 RECRUITING'}`,
+        inline: true 
+      }
+    )
+    .setColor(session.status === 'in_progress' ? 0x00FF00 : 0xFFD700)
+    .setFooter({ text: `Session ID: ${session.id.slice(-8)} • Click Join to hop on!` })
+    .setTimestamp();
+  
   if (session.dupesCompleted > 0 || session.deliveriesCompleted > 0) {
-    embed.addFields(
-      { name: '🔄 Dupes Done', value: `${session.dupesCompleted}`, inline: true },
-      { name: '🚚 Deliveries', value: `${session.deliveriesCompleted}`, inline: true },
-      { name: '💰 Total Earned', value: `$${session.totalEarnings.toLocaleString()}`, inline: true }
-    );
+    embed.addFields({
+      name: '💰 Earnings',
+      value: `Dupes: ${session.dupesCompleted} | Deliveries: ${session.deliveriesCompleted} | Total: $${session.totalEarnings.toLocaleString()}`,
+      inline: false
+    });
   }
   
   return embed;
 }
 
 // ============================================
-// COMPONENTS
+// SETUP COMPONENTS
 // ============================================
 
 function createSetupComponents(sessionId, session) {
+  // Delivery Type Dropdown with descriptions
   const deliverySelect = new StringSelectMenuBuilder()
     .setCustomId(`wagon_delivery_${sessionId}`)
     .setPlaceholder('📍 Select Delivery Type')
-    .addOptions(
-      Object.entries(WAGON_CONFIG.deliveryTypes).map(([key, value]) => ({
-        label: value.name.replace(/[^\w\s]/g, '').trim(),
-        description: `$${value.payout} | ${value.distance} distance | ${value.risk}`,
-        value: key
-      }))
-    );
+    .addOptions([
+      {
+        label: 'Local Delivery',
+        description: 'Short & safe. $500 base payout.',
+        value: 'local',
+        emoji: '📍'
+      },
+      {
+        label: 'Distant Delivery',
+        description: 'Long & risky (PvP). $625 base payout.',
+        value: 'distant',
+        emoji: '🗺️'
+      }
+    ]);
   
+  // Wagon Size Dropdown with descriptions
   const wagonSelect = new StringSelectMenuBuilder()
     .setCustomId(`wagon_size_${sessionId}`)
     .setPlaceholder('📦 Select Wagon Size')
-    .addOptions(
-      Object.entries(WAGON_CONFIG.wagonSizes).map(([key, value]) => ({
-        label: value.name.replace(/[^\w\s]/g, '').trim(),
-        description: `${value.goods} goods capacity`,
-        value: key,
-        emoji: value.emoji
-      }))
-    );
+    .addOptions([
+      {
+        label: 'Small Wagon',
+        description: '25 goods. Quick but low payout.',
+        value: 'small',
+        emoji: '📦'
+      },
+      {
+        label: 'Medium Wagon',
+        description: '50 goods. Balanced option.',
+        value: 'medium',
+        emoji: '🛒'
+      },
+      {
+        label: 'Large Wagon',
+        description: '100 goods. Maximum profits!',
+        value: 'large',
+        emoji: '🚚'
+      }
+    ]);
   
+  // Buttons
   const buttons = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`wagon_dupe_${sessionId}`)
-      .setLabel(`Dupe: ${session.isDupe ? 'ON' : 'OFF'}`)
+      .setLabel(session.isDupe ? 'Dupe: ON' : 'Dupe: OFF')
       .setStyle(session.isDupe ? ButtonStyle.Success : ButtonStyle.Secondary)
       .setEmoji('🔄'),
     new ButtonBuilder()
@@ -273,45 +349,42 @@ function createSetupComponents(sessionId, session) {
   ];
 }
 
+// ============================================
+// RECRUITING COMPONENTS
+// ============================================
+
 function createRecruitingComponents(sessionId, session) {
-  const buttons = new ActionRowBuilder().addComponents(
+  const isHost = (userId) => userId === session.host;
+  
+  const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`wagon_join_${sessionId}`)
-      .setLabel(`Join Posse (${session.players.length}/${WAGON_CONFIG.maxPlayers})`)
+      .setLabel('Join Posse')
       .setStyle(ButtonStyle.Success)
-      .setEmoji('🤠')
-      .setDisabled(session.players.length >= WAGON_CONFIG.maxPlayers),
+      .setEmoji('🤠'),
     new ButtonBuilder()
       .setCustomId(`wagon_leave_${sessionId}`)
       .setLabel('Leave')
       .setStyle(ButtonStyle.Secondary)
       .setEmoji('🚪'),
     new ButtonBuilder()
-      .setCustomId(`wagon_ready_${sessionId}`)
-      .setLabel('Saddle Up!')
-      .setStyle(ButtonStyle.Primary)
-      .setEmoji('🐴')
-      .setDisabled(session.players.length < WAGON_CONFIG.minPlayers)
-  );
-  
-  const hostButtons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`wagon_dupe_complete_${sessionId}`)
-      .setLabel('+1 Dupe')
-      .setStyle(ButtonStyle.Success)
-      .setEmoji('🔄')
-      .setDisabled(!session.isDupe),
-    new ButtonBuilder()
-      .setCustomId(`wagon_delivery_complete_${sessionId}`)
-      .setLabel('+1 Delivery')
-      .setStyle(ButtonStyle.Success)
-      .setEmoji('🚚'),
-    new ButtonBuilder()
       .setCustomId(`wagon_voice_${sessionId}`)
       .setLabel('Create Voice')
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(ButtonStyle.Primary)
       .setEmoji('🔊')
-      .setDisabled(session.voiceChannel !== null),
+  );
+  
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`wagon_ready_${sessionId}`)
+      .setLabel('Start Run')
+      .setStyle(ButtonStyle.Success)
+      .setEmoji('🚀'),
+    new ButtonBuilder()
+      .setCustomId(`wagon_complete_${sessionId}`)
+      .setLabel('Complete')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('✅'),
     new ButtonBuilder()
       .setCustomId(`wagon_end_${sessionId}`)
       .setLabel('End Session')
@@ -319,7 +392,27 @@ function createRecruitingComponents(sessionId, session) {
       .setEmoji('🛑')
   );
   
-  return [buttons, hostButtons];
+  // Host-only: Kick player dropdown (only show if more than 1 player)
+  if (session.players.length > 1) {
+    const kickOptions = session.players
+      .filter(p => p.userId !== session.host)
+      .map(p => ({
+        label: `Kick ${p.name}`,
+        value: p.userId,
+        emoji: '👢'
+      }));
+    
+    if (kickOptions.length > 0) {
+      const kickSelect = new StringSelectMenuBuilder()
+        .setCustomId(`wagon_kick_${sessionId}`)
+        .setPlaceholder('👢 Kick a player (Host only)')
+        .addOptions(kickOptions);
+      
+      return [row1, row2, new ActionRowBuilder().addComponents(kickSelect)];
+    }
+  }
+  
+  return [row1, row2];
 }
 
 // ============================================
@@ -328,69 +421,96 @@ function createRecruitingComponents(sessionId, session) {
 
 async function handleButton(interaction, client) {
   const customId = interaction.customId;
-  
   if (!customId.startsWith('wagon_')) return;
   
   const parts = customId.split('_');
   const action = parts[1];
   const sessionId = parts.slice(2).join('_');
   
-  // Handle special case for dupe_complete and delivery_complete
-  let actualAction = action;
-  let actualSessionId = sessionId;
-  
-  if (action === 'dupe' && parts[2] === 'complete') {
-    actualAction = 'dupe_complete';
-    actualSessionId = parts.slice(3).join('_');
-  } else if (action === 'delivery' && parts[2] === 'complete') {
-    actualAction = 'delivery_complete';
-    actualSessionId = parts.slice(3).join('_');
-  }
-  
-  const session = activeSessions.get(actualSessionId);
-  
+  const session = activeSessions.get(sessionId);
   if (!session) {
-    return interaction.reply({ content: '❌ Session not found or expired.', ephemeral: true });
+    return interaction.reply({ content: '❌ Session expired or not found.', ephemeral: true });
   }
   
   try {
-    switch (actualAction) {
+    switch (action) {
       case 'dupe':
-        await handleDupeToggle(interaction, session, actualSessionId);
+        await handleDupeToggle(interaction, session, sessionId);
         break;
       case 'start':
-        await handleStartRecruiting(interaction, session, actualSessionId, client);
+        await handleStartRecruiting(interaction, session, sessionId, client);
         break;
       case 'cancel':
-        await handleCancelSession(interaction, session, actualSessionId, client);
+        await handleCancelSession(interaction, session, sessionId, client);
         break;
       case 'join':
-        await handleJoinSession(interaction, session, actualSessionId, client);
+        await handleJoinSession(interaction, session, sessionId, client);
         break;
       case 'leave':
-        await handleLeaveSession(interaction, session, actualSessionId, client);
-        break;
-      case 'ready':
-        await handleReadyUp(interaction, session, actualSessionId, client);
-        break;
-      case 'dupe_complete':
-        await handleDupeComplete(interaction, session, actualSessionId, client);
-        break;
-      case 'delivery_complete':
-        await handleDeliveryComplete(interaction, session, actualSessionId, client);
+        await handleLeaveSession(interaction, session, sessionId, client);
         break;
       case 'voice':
-        await handleCreateVoice(interaction, session, actualSessionId, client);
+        await handleCreateVoice(interaction, session, sessionId, client);
+        break;
+      case 'ready':
+        await handleReadyUp(interaction, session, sessionId, client);
+        break;
+      case 'complete':
+        await handleRunComplete(interaction, session, sessionId, client);
         break;
       case 'end':
-        await handleEndSession(interaction, session, actualSessionId, client);
+        await handleEndSession(interaction, session, sessionId, client);
         break;
     }
   } catch (error) {
     console.error('[WAGON LFG] Button error:', error);
-    interaction.reply({ content: '❌ An error occurred.', ephemeral: true }).catch(() => {});
+    interaction.reply({ content: '❌ Something went wrong.', ephemeral: true }).catch(() => {});
   }
 }
+
+// ============================================
+// SELECT MENU HANDLERS
+// ============================================
+
+async function handleSelectMenu(interaction, client) {
+  const customId = interaction.customId;
+  if (!customId.startsWith('wagon_')) return;
+  
+  const parts = customId.split('_');
+  const type = parts[1]; // delivery, size, or kick
+  const sessionId = parts.slice(2).join('_');
+  
+  const session = activeSessions.get(sessionId);
+  if (!session) {
+    return interaction.reply({ content: '❌ Session expired or not found.', ephemeral: true });
+  }
+  
+  // Kick handler
+  if (type === 'kick') {
+    await handleKickPlayer(interaction, session, sessionId, client);
+    return;
+  }
+  
+  // Only host can change settings
+  if (interaction.user.id !== session.host) {
+    return interaction.reply({ content: '❌ Only the host can change settings.', ephemeral: true });
+  }
+  
+  const value = interaction.values[0];
+  
+  if (type === 'delivery') {
+    session.deliveryType = value;
+  } else if (type === 'size') {
+    session.wagonSize = value;
+  }
+  
+  const embed = createSetupEmbed(session);
+  await interaction.update({ embeds: [embed] });
+}
+
+// ============================================
+// ACTION HANDLERS
+// ============================================
 
 async function handleDupeToggle(interaction, session, sessionId) {
   if (interaction.user.id !== session.host) {
@@ -399,7 +519,7 @@ async function handleDupeToggle(interaction, session, sessionId) {
   
   session.isDupe = !session.isDupe;
   
-  const embed = await createSetupEmbed(session, interaction.guild);
+  const embed = createSetupEmbed(session);
   const components = createSetupComponents(sessionId, session);
   
   await interaction.update({ embeds: [embed], components });
@@ -417,15 +537,237 @@ async function handleStartRecruiting(interaction, session, sessionId, client) {
   session.status = 'recruiting';
   session.startedAt = Date.now();
   
-  const embed = await createRecruitingEmbed(session, interaction.guild);
+  const embed = createRecruitingEmbed(session);
   const components = createRecruitingComponents(sessionId, session);
   
   await interaction.update({ embeds: [embed], components });
   
-  const deliveryInfo = WAGON_CONFIG.deliveryTypes[session.deliveryType];
+  // Announce
   await interaction.channel.send({
-    content: `🛒 **WAGON RUN OPEN!** ${deliveryInfo.name} | ${session.isDupe ? 'Dupe Method' : 'Single Run'} | ${session.platform} | Click below to join!`,
-    allowedMentions: { parse: [] }
+    content: `🛒 **WAGON RUN OPEN!** ${session.platform} | ${WAGON_CONFIG.deliveryTypes[session.deliveryType].name} | ${session.isDupe ? '11 Dupes' : 'Single'} | Click Join below!`
+  });
+}
+
+async function handleJoinSession(interaction, session, sessionId, client) {
+  const userId = interaction.user.id;
+  
+  // Check if kicked from this session
+  const kicked = kickedUsers.get(sessionId);
+  if (kicked && kicked.has(userId)) {
+    return interaction.reply({ 
+      content: '❌ You were removed from this session by the host. You cannot rejoin this wagon run. Wait for the next `?wagon` command.', 
+      ephemeral: true 
+    });
+  }
+  
+  // Check if already in session
+  if (session.players.some(p => p.userId === userId)) {
+    return interaction.reply({ content: '❌ You\'re already in this session!', ephemeral: true });
+  }
+  
+  // Check if session is full
+  if (session.players.length >= WAGON_CONFIG.maxPlayers) {
+    return interaction.reply({ content: '❌ Session is full!', ephemeral: true });
+  }
+  
+  // Check for required role
+  const member = interaction.member;
+  const requiredRoles = ['Wagon Runner', 'Frontier Outlaw', '🐴 Frontier Outlaw', '🛞 Wagon Runner'];
+  const hasRole = member.roles.cache.some(r => requiredRoles.some(req => r.name.includes(req)));
+  
+  if (!hasRole) {
+    // DM the user
+    try {
+      const rolesChannel = interaction.guild.channels.cache.find(c => c.name === 'roles' || c.name === 'get-roles');
+      await interaction.user.send({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('🛒 Wagon LFG - Role Required')
+            .setDescription(
+              `Hey partner! You need the **Wagon Runner** or **Frontier Outlaw** role to join wagon runs.\n\n` +
+              `${rolesChannel ? `Head to <#${rolesChannel.id}> to get your roles!` : 'Check the roles channel in the server.'}`
+            )
+            .setColor(0xFF6B6B)
+        ]
+      });
+    } catch (e) {
+      // DMs might be disabled
+    }
+    
+    return interaction.reply({ 
+      content: '❌ You need the **Wagon Runner** or **Frontier Outlaw** role! Check your DMs for more info.', 
+      ephemeral: true 
+    });
+  }
+  
+  // Add player
+  session.players.push({ userId: userId, name: interaction.user.username });
+  
+  const embed = createRecruitingEmbed(session);
+  const components = createRecruitingComponents(sessionId, session);
+  
+  await interaction.update({ embeds: [embed], components });
+  
+  // Notify
+  await interaction.channel.send({
+    content: `🤠 **${interaction.user.username}** joined the wagon! (${session.players.length}/${WAGON_CONFIG.maxPlayers})`
+  });
+}
+
+async function handleLeaveSession(interaction, session, sessionId, client) {
+  const userId = interaction.user.id;
+  
+  // Host can't leave (must cancel)
+  if (userId === session.host) {
+    return interaction.reply({ content: '❌ As host, use "End Session" to close the wagon run.', ephemeral: true });
+  }
+  
+  const playerIndex = session.players.findIndex(p => p.userId === userId);
+  if (playerIndex === -1) {
+    return interaction.reply({ content: '❌ You\'re not in this session.', ephemeral: true });
+  }
+  
+  session.players.splice(playerIndex, 1);
+  
+  const embed = createRecruitingEmbed(session);
+  const components = createRecruitingComponents(sessionId, session);
+  
+  await interaction.update({ embeds: [embed], components });
+}
+
+async function handleKickPlayer(interaction, session, sessionId, client) {
+  // Only host can kick
+  if (interaction.user.id !== session.host) {
+    return interaction.reply({ content: '❌ Only the host can kick players.', ephemeral: true });
+  }
+  
+  const kickUserId = interaction.values[0];
+  
+  // Find and remove player
+  const playerIndex = session.players.findIndex(p => p.userId === kickUserId);
+  if (playerIndex === -1) {
+    return interaction.reply({ content: '❌ Player not found in session.', ephemeral: true });
+  }
+  
+  const kickedPlayer = session.players[playerIndex];
+  session.players.splice(playerIndex, 1);
+  
+  // Add to kicked list so they can't rejoin
+  const kicked = kickedUsers.get(sessionId);
+  if (kicked) kicked.add(kickUserId);
+  
+  // DM the kicked player
+  try {
+    const kickedMember = await interaction.guild.members.fetch(kickUserId);
+    await kickedMember.send({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle('🛒 Removed from Wagon Run')
+          .setDescription(
+            `You were removed from **${session.hostName}**'s wagon run.\n\n` +
+            `You cannot rejoin this session. Wait for the next \`?wagon\` command to join a new one.`
+          )
+          .setColor(0xFF6B6B)
+      ]
+    });
+  } catch (e) {
+    // DMs might be disabled
+  }
+  
+  const embed = createRecruitingEmbed(session);
+  const components = createRecruitingComponents(sessionId, session);
+  
+  await interaction.update({ embeds: [embed], components });
+  
+  await interaction.channel.send({
+    content: `👢 **${kickedPlayer.name}** was removed from the wagon by the host.`
+  });
+}
+
+async function handleCreateVoice(interaction, session, sessionId, client) {
+  if (interaction.user.id !== session.host) {
+    return interaction.reply({ content: '❌ Only the host can create voice channels.', ephemeral: true });
+  }
+  
+  if (session.voiceChannel) {
+    return interaction.reply({ content: `🔊 Voice channel already exists: <#${session.voiceChannel}>`, ephemeral: true });
+  }
+  
+  try {
+    const category = interaction.guild.channels.cache.find(
+      c => c.type === ChannelType.GuildCategory && (c.name.toLowerCase().includes('rdo') || c.name.toLowerCase().includes('red dead'))
+    );
+    
+    const voiceChannel = await interaction.guild.channels.create({
+      name: `🛒 Wagon - ${session.hostName}`,
+      type: ChannelType.GuildVoice,
+      parent: category?.id,
+      userLimit: WAGON_CONFIG.maxPlayers
+    });
+    
+    session.voiceChannel = voiceChannel.id;
+    
+    const embed = createRecruitingEmbed(session);
+    const components = createRecruitingComponents(sessionId, session);
+    
+    await interaction.update({ embeds: [embed], components });
+    
+    await interaction.channel.send({
+      content: `🔊 Voice channel created! <#${voiceChannel.id}>`
+    });
+  } catch (error) {
+    console.error('[WAGON LFG] Voice create error:', error);
+    await interaction.reply({ content: '❌ Failed to create voice channel.', ephemeral: true });
+  }
+}
+
+async function handleReadyUp(interaction, session, sessionId, client) {
+  if (interaction.user.id !== session.host) {
+    return interaction.reply({ content: '❌ Only the host can start the run.', ephemeral: true });
+  }
+  
+  if (session.players.length < WAGON_CONFIG.minPlayers) {
+    return interaction.reply({ content: `❌ Need at least ${WAGON_CONFIG.minPlayers} players!`, ephemeral: true });
+  }
+  
+  session.status = 'in_progress';
+  
+  const embed = createRecruitingEmbed(session);
+  const components = createRecruitingComponents(sessionId, session);
+  
+  await interaction.update({ embeds: [embed], components });
+  
+  const mentions = session.players.map(p => `<@${p.userId}>`).join(' ');
+  await interaction.channel.send({
+    content: `🚀 **WAGON RUN STARTING!** ${mentions}\n\nGood luck out there, partners! 🤠`
+  });
+}
+
+async function handleRunComplete(interaction, session, sessionId, client) {
+  if (interaction.user.id !== session.host) {
+    return interaction.reply({ content: '❌ Only the host can mark runs complete.', ephemeral: true });
+  }
+  
+  const wagonInfo = WAGON_CONFIG.wagonSizes[session.wagonSize];
+  let payout = wagonInfo.payout;
+  if (session.deliveryType === 'distant') {
+    payout = Math.floor(payout * 1.25);
+  }
+  
+  if (session.isDupe) {
+    session.dupesCompleted++;
+  } else {
+    session.deliveriesCompleted++;
+  }
+  session.totalEarnings += payout;
+  
+  const embed = createRecruitingEmbed(session);
+  const components = createRecruitingComponents(sessionId, session);
+  
+  await interaction.update({ embeds: [embed], components });
+  
+  await interaction.channel.send({
+    content: `💰 **${session.isDupe ? 'DUPE' : 'DELIVERY'} #${session.dupesCompleted + session.deliveriesCompleted} COMPLETE!** +$${payout.toLocaleString()} | Total: $${session.totalEarnings.toLocaleString()}`
   });
 }
 
@@ -436,181 +778,17 @@ async function handleCancelSession(interaction, session, sessionId, client) {
   
   await cleanupSession(session, client);
   activeSessions.delete(sessionId);
+  kickedUsers.delete(sessionId);
   
-  const embed = new EmbedBuilder()
-    .setTitle('❌ Wagon Run Cancelled')
-    .setDescription('The host cancelled this session.')
-    .setColor(0xFF0000);
-  
-  await interaction.update({ embeds: [embed], components: [] });
-}
-
-async function handleJoinSession(interaction, session, sessionId, client) {
-  const userId = interaction.user.id;
-  
-  if (session.players.find(p => p.userId === userId)) {
-    return interaction.reply({ content: '❌ You\'re already in this posse!', ephemeral: true });
-  }
-  
-  // Platform check
-  const member = await interaction.guild.members.fetch(userId);
-  const isPS5 = member.roles.cache.some(r => r.name.includes('PS5') || r.name.includes('Primary: PS5'));
-  const isPS4 = member.roles.cache.some(r => r.name.includes('PS4') || r.name.includes('Primary: PS4'));
-  const userPlatform = isPS5 ? 'PS5' : isPS4 ? 'PS4' : 'Unknown';
-  
-  if (session.platform !== 'Unknown' && userPlatform !== 'Unknown' && session.platform !== userPlatform) {
-    return interaction.reply({ 
-      content: `❌ Platform mismatch! This session is for **${session.platform}** players only.`, 
-      ephemeral: true 
-    });
-  }
-  
-  if (session.players.length >= WAGON_CONFIG.maxPlayers) {
-    return interaction.reply({ content: '❌ Posse is full!', ephemeral: true });
-  }
-  
-  session.players.push({ userId: userId, name: interaction.user.username });
-  
-  const embed = await createRecruitingEmbed(session, interaction.guild);
-  const components = createRecruitingComponents(sessionId, session);
-  
-  await interaction.update({ embeds: [embed], components });
-  
-  await interaction.channel.send({
-    content: `🤠 **${interaction.user.username}** joined the posse! (${session.players.length}/${WAGON_CONFIG.maxPlayers})`,
-    allowedMentions: { parse: [] }
+  await interaction.update({
+    embeds: [
+      new EmbedBuilder()
+        .setTitle('❌ Wagon Run Cancelled')
+        .setDescription(`**${session.hostName}** cancelled the wagon run.`)
+        .setColor(0xFF0000)
+    ],
+    components: []
   });
-}
-
-async function handleLeaveSession(interaction, session, sessionId, client) {
-  const userId = interaction.user.id;
-  
-  if (userId === session.host) {
-    return interaction.reply({ content: '❌ You\'re the host! Use "End Session" to close.', ephemeral: true });
-  }
-  
-  const playerIndex = session.players.findIndex(p => p.userId === userId);
-  if (playerIndex === -1) {
-    return interaction.reply({ content: '❌ You\'re not in this posse.', ephemeral: true });
-  }
-  
-  session.players.splice(playerIndex, 1);
-  
-  const embed = await createRecruitingEmbed(session, interaction.guild);
-  const components = createRecruitingComponents(sessionId, session);
-  
-  await interaction.update({ embeds: [embed], components });
-}
-
-async function handleReadyUp(interaction, session, sessionId, client) {
-  if (session.players.length < WAGON_CONFIG.minPlayers) {
-    return interaction.reply({ content: `❌ Need at least ${WAGON_CONFIG.minPlayers} cowboys!`, ephemeral: true });
-  }
-  
-  session.status = 'in_progress';
-  
-  const embed = await createRecruitingEmbed(session, interaction.guild);
-  embed.setTitle('🛒 WAGON RUN - IN PROGRESS');
-  embed.setColor(0x00FF00);
-  
-  const components = createRecruitingComponents(sessionId, session);
-  
-  await interaction.update({ embeds: [embed], components });
-  
-  const mentions = session.players.map(p => `<@${p.userId}>`).join(' ');
-  await interaction.channel.send({
-    content: `🐴 **SADDLE UP!** ${mentions}\n\nTime to make some money, partner! 🤠`
-  });
-}
-
-async function handleDupeComplete(interaction, session, sessionId, client) {
-  if (interaction.user.id !== session.host) {
-    return interaction.reply({ content: '❌ Only the host can mark dupes complete.', ephemeral: true });
-  }
-  
-  const payout = session.deliveryType === 'distant' ? 250 : 200;
-  session.dupesCompleted++;
-  session.totalEarnings += payout * session.players.length;
-  
-  const embed = await createRecruitingEmbed(session, interaction.guild);
-  embed.setTitle('🛒 WAGON RUN - IN PROGRESS');
-  embed.setColor(0x00FF00);
-  
-  const components = createRecruitingComponents(sessionId, session);
-  
-  await interaction.update({ embeds: [embed], components });
-  
-  await interaction.channel.send({
-    content: `🔄 **DUPE #${session.dupesCompleted} COMPLETE!** +$${payout.toLocaleString()}/person | Total: $${session.totalEarnings.toLocaleString()}`,
-    allowedMentions: { parse: [] }
-  });
-}
-
-async function handleDeliveryComplete(interaction, session, sessionId, client) {
-  if (interaction.user.id !== session.host) {
-    return interaction.reply({ content: '❌ Only the host can mark deliveries complete.', ephemeral: true });
-  }
-  
-  const payout = WAGON_CONFIG.deliveryTypes[session.deliveryType].payout;
-  session.deliveriesCompleted++;
-  session.totalEarnings += payout * session.players.length;
-  
-  const embed = await createRecruitingEmbed(session, interaction.guild);
-  embed.setTitle('🛒 WAGON RUN - IN PROGRESS');
-  embed.setColor(0x00FF00);
-  
-  const components = createRecruitingComponents(sessionId, session);
-  
-  await interaction.update({ embeds: [embed], components });
-  
-  await recordCompletion(session, client);
-  
-  await interaction.channel.send({
-    content: `🚚 **DELIVERY #${session.deliveriesCompleted} COMPLETE!** +$${payout.toLocaleString()}/person | Total: $${session.totalEarnings.toLocaleString()}`,
-    allowedMentions: { parse: [] }
-  });
-}
-
-async function handleCreateVoice(interaction, session, sessionId, client) {
-  if (interaction.user.id !== session.host) {
-    return interaction.reply({ content: '❌ Only the host can create voice channels.', ephemeral: true });
-  }
-  
-  try {
-    const category = interaction.guild.channels.cache.find(
-      c => c.type === ChannelType.GuildCategory && (c.name.toLowerCase().includes('red dead') || c.name.toLowerCase().includes('rdo'))
-    );
-    
-    const voiceChannel = await interaction.guild.channels.create({
-      name: `🛒 Wagon - ${session.hostName}`,
-      type: ChannelType.GuildVoice,
-      parent: category?.id,
-      userLimit: WAGON_CONFIG.maxPlayers,
-      permissionOverwrites: [
-        { id: interaction.guild.id, deny: [PermissionFlagsBits.Connect] },
-        ...session.players.map(p => ({
-          id: p.userId,
-          allow: [PermissionFlagsBits.Connect, PermissionFlagsBits.Speak]
-        }))
-      ]
-    });
-    
-    session.voiceChannel = voiceChannel.id;
-    
-    const embed = await createRecruitingEmbed(session, interaction.guild);
-    const components = createRecruitingComponents(sessionId, session);
-    
-    await interaction.update({ embeds: [embed], components });
-    
-    await interaction.channel.send({
-      content: `🔊 Voice channel created! <#${voiceChannel.id}>`,
-      allowedMentions: { parse: [] }
-    });
-    
-  } catch (error) {
-    console.error('[WAGON LFG] Voice channel error:', error);
-    await interaction.reply({ content: '❌ Failed to create voice channel.', ephemeral: true });
-  }
 }
 
 async function handleEndSession(interaction, session, sessionId, client) {
@@ -618,67 +796,29 @@ async function handleEndSession(interaction, session, sessionId, client) {
     return interaction.reply({ content: '❌ Only the host can end the session.', ephemeral: true });
   }
   
-  session.status = 'completed';
+  userCooldowns.set(session.host, Date.now());
   
   await cleanupSession(session, client);
   activeSessions.delete(sessionId);
-  userCooldowns.set(session.host, Date.now());
+  kickedUsers.delete(sessionId);
   
   const embed = new EmbedBuilder()
-    .setTitle('✅ WAGON SESSION COMPLETE')
-    .setDescription(`
-**Host:** ${session.hostName}
-**Dupes:** ${session.dupesCompleted} | **Deliveries:** ${session.deliveriesCompleted}
-**Total Earnings:** $${session.totalEarnings.toLocaleString()}
-**Posse:** ${session.players.map(p => p.name).join(', ')}
-    `)
+    .setTitle('🛒 Wagon Run Complete!')
+    .setDescription(`**Host:** ${session.hostName}`)
+    .addFields(
+      { name: '💰 Total Earnings', value: `$${session.totalEarnings.toLocaleString()}`, inline: true },
+      { name: '🔄 Dupes', value: `${session.dupesCompleted}`, inline: true },
+      { name: '📦 Deliveries', value: `${session.deliveriesCompleted}`, inline: true },
+      { name: '👥 Crew', value: session.players.map(p => p.name).join(', '), inline: false }
+    )
     .setColor(0x00FF00)
-    .setFooter({ text: 'Thanks for using Cripps\' LFG system!' })
     .setTimestamp();
   
   await interaction.update({ embeds: [embed], components: [] });
 }
 
 // ============================================
-// SELECT MENU HANDLER
-// ============================================
-
-async function handleSelectMenu(interaction, client) {
-  const customId = interaction.customId;
-  
-  if (!customId.startsWith('wagon_')) return;
-  
-  const parts = customId.split('_');
-  const type = parts[1];
-  const sessionId = parts.slice(2).join('_');
-  
-  const session = activeSessions.get(sessionId);
-  
-  if (!session) {
-    return interaction.reply({ content: '❌ Session not found.', ephemeral: true });
-  }
-  
-  if (interaction.user.id !== session.host) {
-    return interaction.reply({ content: '❌ Only the host can change settings.', ephemeral: true });
-  }
-  
-  const value = interaction.values[0];
-  
-  switch (type) {
-    case 'delivery':
-      session.deliveryType = value;
-      break;
-    case 'size':
-      session.wagonSize = value;
-      break;
-  }
-  
-  const embed = await createSetupEmbed(session, interaction.guild);
-  await interaction.update({ embeds: [embed] });
-}
-
-// ============================================
-// UTILITIES
+// UTILITY FUNCTIONS
 // ============================================
 
 async function cleanupSession(session, client) {
@@ -696,48 +836,19 @@ function checkSessionTimeouts(client) {
     if (now - session.createdAt > WAGON_CONFIG.sessionTimeout) {
       cleanupSession(session, client);
       activeSessions.delete(sessionId);
+      kickedUsers.delete(sessionId);
+      console.log(`[WAGON LFG] Session ${sessionId} timed out`);
     }
   }
 }
 
-async function recordCompletion(session, client) {
-  try {
-    await client.db.query(
-      `INSERT INTO wagon_completions (session_id, host_id, players, delivery_type, dupes, deliveries, earnings, completed_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
-      [session.id, session.host, JSON.stringify(session.players.map(p => p.userId)), session.deliveryType, session.dupesCompleted, session.deliveriesCompleted, session.totalEarnings]
-    );
-  } catch (e) {
-    console.error('[WAGON LFG] Record error:', e);
-  }
-}
-
-function formatTime(ms) {
-  const seconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  if (hours > 0) return `${hours}:${(minutes % 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
-  return `${minutes}:${(seconds % 60).toString().padStart(2, '0')}`;
-}
-
 async function createTables(client) {
-  try {
-    await client.db.query(`
-      CREATE TABLE IF NOT EXISTS wagon_completions (
-        id SERIAL PRIMARY KEY,
-        session_id VARCHAR(64),
-        host_id VARCHAR(32),
-        players JSONB,
-        delivery_type VARCHAR(32),
-        dupes INTEGER DEFAULT 0,
-        deliveries INTEGER DEFAULT 0,
-        earnings INTEGER DEFAULT 0,
-        completed_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
-  } catch (e) {
-    console.error('[WAGON LFG] Table error:', e);
-  }
+  // No database tables needed for this version - all in memory
+  console.log('[WAGON LFG] Using in-memory session storage');
 }
 
-module.exports = { initialize, createSession, createTables, WAGON_CONFIG };
+module.exports = {
+  initialize,
+  createSession,
+  createTables
+};
