@@ -505,7 +505,8 @@ async function handleSelectMenu(interaction, client) {
   }
   
   const embed = createSetupEmbed(session);
-  await interaction.update({ embeds: [embed] });
+  const components = createSetupComponents(sessionId, session);
+  await interaction.update({ embeds: [embed], components });
 }
 
 // ============================================

@@ -245,10 +245,36 @@ client.on(Events.MessageCreate, async (message) => {
       } 
     }
     
+    // Non-command message in LFG channel - delete and warn
     try { 
       await message.delete(); 
       const w = await message.channel.send(`<@${message.author.id}> *spits* LFG commands only! Use \`?wagon\` to start a wagon run.`); 
-      setTimeout(() => w.delete().catch(() => {}), 10000); 
+      setTimeout(() => w.delete().catch(() => {}), 10000);
+      
+      // DM the user with instructions
+      try {
+        const botCommandsChannel = message.guild.channels.cache.find(c => c.name === 'bot-commands');
+        await message.author.send({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('🛒 Wagon LFG - Commands Only')
+              .setDescription(
+                `Hey partner! The **#wagon-lfg** channel is for LFG commands only, not chat.\n\n` +
+                `**How to use:**\n` +
+                `1. Type \`?wagon\` to create a wagon session\n` +
+                `2. Select your delivery type (Local/Distant)\n` +
+                `3. Choose wagon size & dupe settings\n` +
+                `4. Click "Start Recruiting" when ready\n` +
+                `5. Others can join by clicking the button\n\n` +
+                `${botCommandsChannel ? `For all bot commands, check <#${botCommandsChannel.id}>` : 'Check #bot-commands for all available commands.'}`
+              )
+              .setColor(0x8B4513)
+              .setFooter({ text: 'Cripps - Trader Coordinator' })
+          ]
+        });
+      } catch (dmError) {
+        // DMs might be disabled
+      }
     } catch (e) {}
     return;
   }
