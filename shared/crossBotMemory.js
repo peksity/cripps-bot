@@ -602,7 +602,7 @@ class CrossBotMemory {
 
     // If we have a user, get collective opinion
     if (userId) {
-      const opinion = await getCollectiveOpinion(userId);
+      const opinion = await this.getCollectiveOpinion(userId);
       if (opinion && opinion.total_votes > 1) {
         const sentiment = opinion.sentiment > 0.3 ? 'positive' 
           : opinion.sentiment < -0.3 ? 'negative' : 'mixed';
