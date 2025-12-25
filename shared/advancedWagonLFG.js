@@ -250,7 +250,7 @@ async function handleStart(interaction) {
     try {
       const guild = interaction.guild;
       const category = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && (c.name.toLowerCase().includes('red dead') || c.name.toLowerCase().includes('rdo')));
-      voiceChannel = await guild.channels.create({ name: `🛒 ${setup.hostUsername}'s Wagon`, type: ChannelType.GuildVoice, parent: category?.id, userLimit: 7 });
+      voiceChannel = await guild.channels.create({ name: `🛒 ${setup.hostUsername}'s Wagon`, type: ChannelType.GuildVoice, parent: category?.id, userLimit: 6 });
     } catch (e) {}
   }
   
@@ -292,7 +292,7 @@ function createMainEmbed(session) {
   
   // Build posse list with numbered slots
   let posseList = `1.👑 **${session.hostUsername}** (Host)\n`;
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 5; i++) {
     if (session.crew[i]) {
       posseList += `${i + 2}. ${session.crew[i].username}\n`;
     } else {
@@ -305,7 +305,7 @@ function createMainEmbed(session) {
     .setDescription(`**Host:** ${session.hostUsername} (${session.hostPsn || 'Unknown'})\n${wagon.emoji} ${delivery.name} | ${wagon.emoji} ${wagon.name} | ${session.dupe ? '🔄 Dupe ON' : ''}`)
     .addFields(
       { name: '🤠 Posse', value: posseList, inline: true },
-      { name: '📊 Info', value: `Slots: **${totalPosse}/7**\nPotential: **$${potentialPerRun.toFixed(2)}**${session.dupeCount > 0 ? `\n\n💰 **Dupes: ${session.dupeCount}**\n💵 Total: $${session.totalEarnings.toFixed(2)}` : ''}`, inline: true }
+      { name: '📊 Info', value: `Slots: **${totalPosse}/6**\nPotential: **$${potentialPerRun.toFixed(2)}**${session.dupeCount > 0 ? `\n\n💰 **Dupes: ${session.dupeCount}**\n💵 Total: $${session.totalEarnings.toFixed(2)}` : ''}`, inline: true }
     )
     .setColor(session.status === 'recruiting' ? COLORS.gold : session.status === 'in_progress' ? COLORS.leather : COLORS.success)
     .setFooter({ text: `Platform: ${platform.short} • ${getTimeAgo(session.createdAt)}` });
@@ -318,7 +318,7 @@ function createSessionControls(session) {
   
   // Row 1: Join/Leave/Voice buttons
   const row1 = new ActionRowBuilder();
-  if (session.status === 'recruiting' && session.crew.length < 6) {
+  if (session.status === 'recruiting' && session.crew.length < 5) {
     row1.addComponents(new ButtonBuilder().setCustomId(`wagon_join_${session.id}`).setLabel('Join').setStyle(ButtonStyle.Success).setEmoji('🤠'));
   }
   row1.addComponents(
@@ -347,7 +347,7 @@ async function handleJoin(interaction) {
   if (!session) return interaction.reply({ content: '❌ Session ended.', ephemeral: true });
   if (session.hostId === interaction.user.id) return interaction.reply({ content: '❌ You\'re the host!', ephemeral: true });
   if (session.crew.some(c => c.userId === interaction.user.id)) return interaction.reply({ content: '❌ Already in!', ephemeral: true });
-  if (session.crew.length >= 6) return interaction.reply({ content: '❌ Full!', ephemeral: true });
+  if (session.crew.length >= 5) return interaction.reply({ content: '❌ Full!', ephemeral: true });
   if (blacklistSystem && await blacklistSystem.isBlacklisted(session.hostId, interaction.user.id)) return interaction.reply({ content: '🚫 Blacklisted.', ephemeral: true });
   
   const modal = new ModalBuilder().setCustomId(`wagon_joinpsn_${sessionId}`).setTitle('Join Wagon')
@@ -361,7 +361,7 @@ async function handleJoin(interaction) {
     
     // Send notification in channel
     const channel = interaction.client.channels.cache.get(session.channelId);
-    await channel.send(`🤠 **${m.user.username}** joined the wagon! (${session.crew.length + 1}/7)`);
+    await channel.send(`🤠 **${m.user.username}** joined the wagon! (${session.crew.length + 1}/6)`);
     
     await m.reply({ content: '✅ Joined!', ephemeral: true });
   } catch (e) {}

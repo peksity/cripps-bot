@@ -269,31 +269,6 @@ client.on(Events.MessageCreate, async (message) => {
       await message.delete(); 
       const w = await message.channel.send(`<@${message.author.id}> *spits* LFG commands only! Use \`?wagon\` to start a wagon run.`); 
       setTimeout(() => w.delete().catch(() => {}), 10000);
-      
-      // DM the user with instructions
-      try {
-        const botCommandsChannel = message.guild.channels.cache.find(c => c.name === 'bot-commands');
-        await message.author.send({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle('🛒 Wagon LFG - Commands Only')
-              .setDescription(
-                `Hey partner! The **#wagon-lfg** channel is for LFG commands only, not chat.\n\n` +
-                `**How to use:**\n` +
-                `1. Type \`?wagon\` to create a wagon session\n` +
-                `2. Select your delivery type (Local/Distant)\n` +
-                `3. Choose wagon size & dupe settings\n` +
-                `4. Click "Start Recruiting" when ready\n` +
-                `5. Others can join by clicking the button\n\n` +
-                `${botCommandsChannel ? `For all bot commands, check <#${botCommandsChannel.id}>` : 'Check #bot-commands for all available commands.'}`
-              )
-              .setColor(0x8B4513)
-              .setFooter({ text: 'Cripps - Trader Coordinator' })
-          ]
-        });
-      } catch (dmError) {
-        // DMs might be disabled
-      }
     } catch (e) {}
     return;
   }
@@ -347,31 +322,7 @@ client.on(Events.MessageCreate, async (message) => {
     // WAGON COMMAND IN WRONG CHANNEL - Redirect to #wagon-lfg
     if (cmd === 'wagon' || cmd === 'delivery' || cmd === 'trader') {
       const lfgChannel = message.guild.channels.cache.find(c => c.name === 'wagon-lfg');
-      
-      // Reply in channel
       await message.reply(`*points* Wrong place, partner! Head to ${lfgChannel ? `<#${lfgChannel.id}>` : '#wagon-lfg'} for wagon runs.`);
-      
-      // DM the user with instructions
-      try {
-        await message.author.send({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle('🛒 Wagon LFG - Wrong Channel!')
-              .setDescription(
-                `Hey partner! The \`?wagon\` command only works in the **#wagon-lfg** channel.\n\n` +
-                `**How to use:**\n` +
-                `1. Go to ${lfgChannel ? `<#${lfgChannel.id}>` : '#wagon-lfg'}\n` +
-                `2. Type \`?wagon\` to create a session\n` +
-                `3. Enter your PSN username\n` +
-                `4. Select delivery type & wagon size\n` +
-                `5. Click "Start Recruiting" when ready\n\n` +
-                `Others can join by clicking the Join button!`
-              )
-              .setColor(0x8B4513)
-              .setFooter({ text: 'Cripps - Trader Coordinator' })
-          ]
-        });
-      } catch (dmError) {}
       return;
     }
   }
