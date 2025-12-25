@@ -325,14 +325,34 @@ client.on(Events.MessageCreate, async (message) => {
       return;
     }
     
-    // Allow ?wagon in RDO channels too
-    if ((cmd === 'wagon' || cmd === 'delivery') && (channelName.includes('rdo') || channelName.includes('red-dead'))) {
+    // WAGON COMMAND IN WRONG CHANNEL - Redirect to #wagon-lfg
+    if (cmd === 'wagon' || cmd === 'delivery' || cmd === 'trader') {
       const lfgChannel = message.guild.channels.cache.find(c => c.name === 'wagon-lfg');
-      if (lfgChannel) {
-        await message.reply(`*points* Head to <#${lfgChannel.id}> for wagon runs, partner.`);
-      } else {
-        await advancedWagonLFG.createSession(message, client);
-      }
+      
+      // Reply in channel
+      await message.reply(`*points* Wrong place, partner! Head to ${lfgChannel ? `<#${lfgChannel.id}>` : '#wagon-lfg'} for wagon runs.`);
+      
+      // DM the user with instructions
+      try {
+        await message.author.send({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('🛒 Wagon LFG - Wrong Channel!')
+              .setDescription(
+                `Hey partner! The \`?wagon\` command only works in the **#wagon-lfg** channel.\n\n` +
+                `**How to use:**\n` +
+                `1. Go to ${lfgChannel ? `<#${lfgChannel.id}>` : '#wagon-lfg'}\n` +
+                `2. Type \`?wagon\` to create a session\n` +
+                `3. Enter your PSN username\n` +
+                `4. Select delivery type & wagon size\n` +
+                `5. Click "Start Recruiting" when ready\n\n` +
+                `Others can join by clicking the Join button!`
+              )
+              .setColor(0x8B4513)
+              .setFooter({ text: 'Cripps - Trader Coordinator' })
+          ]
+        });
+      } catch (dmError) {}
       return;
     }
   }
