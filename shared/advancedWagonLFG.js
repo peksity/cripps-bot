@@ -162,14 +162,14 @@ async function handleInteraction(interaction) {
     if (action === 'platform') await handlePlatform(interaction);
     else if (action === 'size') await handleSize(interaction);
     else if (action === 'delivery') await handleDelivery(interaction);
-    else if (action === 'dupe') await handleDupe(interaction, parts[2] === 'on');
+    else if (action === 'dupe') await handleSetupDupe(interaction, parts[2] === 'on');
     else if (action === 'voice') await handleVoice(interaction, parts[2] === 'on');
     else if (action === 'start') await handleStart(interaction);
     else if (action === 'join') await handleJoin(interaction);
     else if (action === 'leave') await handleLeave(interaction);
     else if (action === 'voicebtn') await handleVoiceBtn(interaction);
     else if (action === 'startrun') await handleStartRun(interaction);
-    else if (action === 'done') await handleDone(interaction);
+    else if (action === 'dupenow') await handleDupeNow(interaction);
     else if (action === 'end') await handleEnd(interaction);
     else if (action === 'kick') await handleKick(interaction, parts[2]);
   } catch (e) { console.error('[WAGON]', e); }
@@ -219,7 +219,7 @@ async function handleDelivery(interaction) {
   await interaction.update({ embeds: [createSetupEmbed(5, setup.data)], components: createFinalOptions(setupId) });
 }
 
-async function handleDupe(interaction, isOn) {
+async function handleSetupDupe(interaction, isOn) {
   const setupId = getSetupId(interaction.customId);
   const setup = setupSessions.get(setupId);
   if (!setup || setup.hostId !== interaction.user.id) return interaction.reply({ content: '❌ Not your setup.', ephemeral: true });
@@ -331,13 +331,13 @@ function createSessionControls(session) {
   );
   rows.push(row1);
   
-  // Row 2: Host controls - Start Run/Done/End
+  // Row 2: Host controls - Start Run/Dupe/End
   const row2 = new ActionRowBuilder();
   if (session.status === 'recruiting') {
     row2.addComponents(new ButtonBuilder().setCustomId(`wagon_startrun_${session.id}`).setLabel('Start Run').setStyle(ButtonStyle.Primary).setEmoji('🚀'));
   }
   if (session.status === 'in_progress') {
-    row2.addComponents(new ButtonBuilder().setCustomId(`wagon_done_${session.id}`).setLabel('Done').setStyle(ButtonStyle.Success).setEmoji('✅'));
+    row2.addComponents(new ButtonBuilder().setCustomId(`wagon_dupenow_${session.id}`).setLabel('Dupe').setStyle(ButtonStyle.Success).setEmoji('💰'));
   }
   row2.addComponents(new ButtonBuilder().setCustomId(`wagon_end_${session.id}`).setLabel('End').setStyle(ButtonStyle.Danger).setEmoji('⭕'));
   rows.push(row2);
@@ -415,7 +415,7 @@ async function handleStartRun(interaction) {
   await interaction.reply({ content: '🚀 Run started!', ephemeral: true });
 }
 
-async function handleDone(interaction) {
+async function handleDupeNow(interaction) {
   const sessionId = getSessionId(interaction.customId);
   const session = activeSessions.get(sessionId);
   if (!session) return interaction.reply({ content: '❌ Session ended.', ephemeral: true });
@@ -425,8 +425,10 @@ async function handleDone(interaction) {
   session.dupeCount++;
   
   // Calculate earnings for this dupe
-  const dupeEarnings = session.hostPay + (session.crew.length * session.possePay);
-  session.totalEarnings += dupeEarnings;
+  const hostEarnings = session.hostPay;
+  const posseEarnings = session.possePay;
+  const totalThisDupe = hostEarnings + (session.crew.length * posseEarnings);
+  session.totalEarnings += totalThisDupe;
   
   const channel = interaction.client.channels.cache.get(session.channelId);
   
@@ -436,14 +438,19 @@ async function handleDone(interaction) {
     await oldMsg.delete();
   } catch (e) {}
   
-  // Send dupe notification
-  await channel.send(`💰 **DUPE #${session.dupeCount}!** +$${dupeEarnings.toFixed(2)}`);
+  // Send dupe notification with earnings breakdown
+  let dupeMsg = `💰 **DUPE #${session.dupeCount}!**\n`;
+  dupeMsg += `👑 Host earned: **$${hostEarnings.toFixed(2)}**\n`;
+  if (session.crew.length > 0) {
+    dupeMsg += `🤠 Posse earned: **$${posseEarnings.toFixed(2)}** each\n`;
+  }
+  dupeMsg += `💵 **Total so far: $${session.totalEarnings.toFixed(2)}**`;
+  await channel.send(dupeMsg);
   
   // Post new embed at bottom
   const newMsg = await channel.send({
-    content: `<@&${session.pingRoleId || ''}> 🛒 **${session.hostUsername}** is running wagons!`.replace('<@&> ', ''),
-    embeds: [createSessionEmbed(session)],
-    components: createSessionButtons(session)
+    embeds: [createMainEmbed(session)],
+    components: createSessionControls(session)
   });
   
   session.messageId = newMsg.id;
@@ -486,7 +493,7 @@ async function handleEnd(interaction) {
   activeSessions.delete(sessionId);
   activeSessions.delete(session.hostId);
   
-  await interaction.reply({ content: `🏆 Session ended! ${session.dupeCount > 0 ? `Total dupes: ${session.dupeCount}, Earnings: $${session.totalEarnings.toFixed(2)}` : ''}`, ephemeral: true });
+  await interaction.reply({ content: `✅ Session ended! ${session.dupeCount > 0 ? `Total dupes: ${session.dupeCount}, Earnings: $${session.totalEarnings.toFixed(2)}` : ''}`, ephemeral: true });
 }
 
 async function handleKick(interaction, subAction) {
