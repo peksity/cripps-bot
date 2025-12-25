@@ -214,7 +214,7 @@ async function handleDelivery(interaction) {
   
   setup.data.deliveryType = interaction.values[0];
   setup.data.dupe = false;
-  setup.data.voice = false;
+  setup.data.voice = true;
   setup.step = 5;
   await interaction.update({ embeds: [createSetupEmbed(5, setup.data)], components: createFinalOptions(setupId) });
 }
