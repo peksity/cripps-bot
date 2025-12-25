@@ -428,11 +428,26 @@ async function handleDone(interaction) {
   const dupeEarnings = session.hostPay + (session.crew.length * session.possePay);
   session.totalEarnings += dupeEarnings;
   
-  await updateSession(interaction.client, session);
-  
-  // Send dupe notification in channel
   const channel = interaction.client.channels.cache.get(session.channelId);
+  
+  // Delete old message
+  try {
+    const oldMsg = await channel.messages.fetch(session.messageId);
+    await oldMsg.delete();
+  } catch (e) {}
+  
+  // Send dupe notification
   await channel.send(`💰 **DUPE #${session.dupeCount}!** +$${dupeEarnings.toFixed(2)}`);
+  
+  // Post new embed at bottom
+  const newMsg = await channel.send({
+    content: `<@&${session.pingRoleId || ''}> 🛒 **${session.hostUsername}** is running wagons!`.replace('<@&> ', ''),
+    embeds: [createSessionEmbed(session)],
+    components: createSessionButtons(session)
+  });
+  
+  session.messageId = newMsg.id;
+  await updateSession(interaction.client, session);
   
   await interaction.reply({ content: `✅ Dupe #${session.dupeCount} recorded! Total: $${session.totalEarnings.toFixed(2)}`, ephemeral: true });
 }
