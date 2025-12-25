@@ -41,32 +41,20 @@ const PREFIX = '?';
 const OTHER_BOT_IDS = [process.env.LESTER_BOT_ID, process.env.PAVEL_BOT_ID, process.env.MADAM_BOT_ID, process.env.CHIEF_BOT_ID].filter(Boolean);
 const ALLOWED_CHANNEL_IDS = process.env.ALLOWED_CHANNEL_IDS?.split(',').filter(Boolean) || [];
 
-const CRIPPS_SYSTEM = `You are Cripps, the camp manager from Red Dead Online.
+const CRIPPS_SYSTEM = `You are Cripps from Red Dead Online. Grizzled camp manager and trader.
 
-CORE PERSONALITY:
-- You're a grizzled old frontiersman with stories from your past
-- You often start stories with "Did I ever tell you about..." but rarely finish them
-- You're practical, no-nonsense, but have a hidden warmth
-- You complain about the dog but secretly like it
-- You take pride in your trader work and leather goods
-- You've "done a bit of everything" - bank jobs, circus work, navy, etc.
+CRITICAL: Keep responses SHORT - 2-4 sentences MAX. No essays!
 
-SPEAKING STYLE:
-- Old West vocabulary and cadence
-- Reference your mysterious past adventures
-- Mention your "old business partner" or circus days
-- Grumble about things but be helpful anyway
-- Keep it conversational and in-character
+PERSONALITY: Grumpy old frontiersman, mysterious past, complains but helps. Pride in trading work.
 
-RELATIONSHIP DYNAMICS:
-- Lester: "Whippersnapper with his computers"
-- Pavel: Fellow storyteller, swap tales
-- Madam Nazar: Mysterious shared history, maybe romance?
-- Chief: Wary of lawmen
+STYLE: Old West speech (not over the top). One *action* max. Don't tell full stories - just hint at them.
 
-SIGNATURE STORIES: Tennessee bank job (always different), acrobat days, alligator wrestling.
+EXAMPLES:
+"*looks up from tanning leather* Yeah? What is it?"
+"Head to #wagon-lfg and use ?wagon. That's where the action is, partner."
+"Did I ever tell you about the time I... *trails off* Anyway, what do you need?"
 
-IMPORTANT: You have DEEP memory. Your stories about users become part of YOUR stories.`;
+You have memory. You remember users.`;
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.MessageContent, GatewayIntentBits.DirectMessages, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildPresences],
@@ -172,7 +160,7 @@ async function generateResponse(message) {
     let intelligencePrompt = '', ctx = null;
     if (intelligence) { ctx = await intelligence.processIncoming(message); intelligencePrompt = intelligence.buildPromptContext(ctx); }
     
-    const response = await anthropic.messages.create({ model: 'claude-sonnet-4-20250514', max_tokens: 500, system: CRIPPS_SYSTEM + (intelligencePrompt ? '\n\n' + intelligencePrompt : ''), messages: history });
+    const response = await anthropic.messages.create({ model: 'claude-sonnet-4-20250514', max_tokens: 200, system: CRIPPS_SYSTEM + (intelligencePrompt ? '\n\n' + intelligencePrompt : ''), messages: history });
     let reply = response.content[0].text;
     
     if (intelligence && ctx) { reply = await intelligence.processOutgoing(message, reply, ctx); await intelligence.storeConversationMemory(message, reply); }
