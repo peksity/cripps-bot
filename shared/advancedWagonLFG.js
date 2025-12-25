@@ -249,9 +249,13 @@ async function handleStart(interaction) {
   if (setup.data.voice) {
     try {
       const guild = interaction.guild;
-      const category = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && (c.name.toLowerCase().includes('red dead') || c.name.toLowerCase().includes('rdo')));
+      // Try specific category ID first, then search by name
+      let category = guild.channels.cache.get('1453304762597376094');
+      if (!category) {
+        category = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && (c.name.toLowerCase().includes('red dead') || c.name.toLowerCase().includes('rdo')));
+      }
       voiceChannel = await guild.channels.create({ name: `🛒 ${setup.hostUsername}'s Wagon`, type: ChannelType.GuildVoice, parent: category?.id, userLimit: 6 });
-    } catch (e) {}
+    } catch (e) { console.error('Voice channel error:', e); }
   }
   
   const session = {
@@ -332,7 +336,7 @@ function createSessionControls(session) {
   if (session.status === 'recruiting') {
     row2.addComponents(new ButtonBuilder().setCustomId(`wagon_startrun_${session.id}`).setLabel('Start Run').setStyle(ButtonStyle.Primary).setEmoji('🚀'));
   }
-  if (session.status === 'in_progress' && session.dupe) {
+  if (session.status === 'in_progress') {
     row2.addComponents(new ButtonBuilder().setCustomId(`wagon_done_${session.id}`).setLabel('Done').setStyle(ButtonStyle.Success).setEmoji('✅'));
   }
   row2.addComponents(new ButtonBuilder().setCustomId(`wagon_end_${session.id}`).setLabel('End').setStyle(ButtonStyle.Danger).setEmoji('⭕'));
