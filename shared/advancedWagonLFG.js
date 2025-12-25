@@ -295,10 +295,10 @@ function createMainEmbed(session) {
   const potentialPerRun = session.hostPay + (session.crew.length * session.possePay);
   
   // Build posse list with numbered slots
-  let posseList = `1.👑 **${session.hostUsername}** (Host)\n`;
+  let posseList = `1.👑 **${session.hostUsername}** (PSN: ${session.hostPsn})\n`;
   for (let i = 0; i < 5; i++) {
     if (session.crew[i]) {
-      posseList += `${i + 2}. ${session.crew[i].username}\n`;
+      posseList += `${i + 2}. ${session.crew[i].username} (PSN: ${session.crew[i].psn})\n`;
     } else {
       posseList += `${i + 2}. 🟡 *Open*\n`;
     }
