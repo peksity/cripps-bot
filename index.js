@@ -110,8 +110,7 @@ client.once(Events.ClientReady, async () => {
 
   // Initialize ADVANCED WAGON LFG
   try {
-    advancedWagonLFG.initialize(client);
-    await advancedWagonLFG.createTables(client);
+    advancedWagonLFG.initialize(client, pool);
     console.log('🛒 Advanced Wagon LFG: ONLINE');
   } catch (e) {
     console.error('Wagon LFG init error:', e.message);
