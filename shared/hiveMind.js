@@ -450,6 +450,58 @@ function isQualityMessage(content) {
 }
 
 // ============================================
+// INNER LIFE INTEGRATION
+// ============================================
+
+let innerLife = null;
+try { innerLife = require('./innerLife'); } catch (e) { console.log('[HIVEMIND] InnerLife not found'); }
+
+/**
+ * Get enhanced context including inner life
+ */
+async function getFullContext(botId, message) {
+  let context = await buildMemoryContext(message, botId);
+  
+  if (innerLife) {
+    const innerContext = await innerLife.buildInnerLifeContext(botId, message);
+    context += innerContext;
+  }
+  
+  return context;
+}
+
+/**
+ * Check if any bot should speak autonomously
+ */
+async function checkAutonomousAction(guildId, channel, availableBots) {
+  if (!innerLife) return null;
+  
+  // Pick a random bot to potentially think out loud
+  const botId = availableBots[Math.floor(Math.random() * availableBots.length)];
+  
+  const decision = await innerLife.shouldBotThinkOutLoud(botId, guildId, channel);
+  if (decision.should) {
+    return {
+      type: 'thought',
+      botId,
+      context: decision.context
+    };
+  }
+  
+  // Check for bot-to-bot interaction
+  const interactDecision = await innerLife.shouldBotsInteract(guildId);
+  if (interactDecision.should) {
+    return {
+      type: 'botchat',
+      bot1: interactDecision.bot1,
+      bot2: interactDecision.bot2
+    };
+  }
+  
+  return null;
+}
+
+// ============================================
 // EXPORTS
 // ============================================
 
@@ -480,6 +532,11 @@ module.exports = {
   
   // Utilities
   isQualityMessage,
+  
+  // Inner Life integration
+  getFullContext,
+  checkAutonomousAction,
+  innerLife,
   
   // Constants
   BOT_NAMES,
