@@ -430,6 +430,12 @@ async function handleDupeNow(interaction) {
   const totalThisDupe = hostEarnings + (session.crew.length * posseEarnings);
   session.totalEarnings += totalThisDupe;
   
+  // Track cumulative earnings
+  if (!session.hostTotalEarnings) session.hostTotalEarnings = 0;
+  if (!session.posseTotalEarnings) session.posseTotalEarnings = 0;
+  session.hostTotalEarnings += hostEarnings;
+  session.posseTotalEarnings += posseEarnings;
+  
   const channel = interaction.client.channels.cache.get(session.channelId);
   
   // Delete old message
@@ -440,11 +446,10 @@ async function handleDupeNow(interaction) {
   
   // Send dupe notification with earnings breakdown
   let dupeMsg = `💰 **DUPE #${session.dupeCount}!**\n`;
-  dupeMsg += `👑 Host earned: **$${hostEarnings.toFixed(2)}**\n`;
+  dupeMsg += `👑 **Host:** +$${hostEarnings.toFixed(2)} (Total: **$${session.hostTotalEarnings.toFixed(2)}**)\n`;
   if (session.crew.length > 0) {
-    dupeMsg += `🤠 Posse earned: **$${posseEarnings.toFixed(2)}** each\n`;
+    dupeMsg += `🤠 **Posse:** +$${posseEarnings.toFixed(2)} each (Total: **$${session.posseTotalEarnings.toFixed(2)}** each)`;
   }
-  dupeMsg += `💵 **Total so far: $${session.totalEarnings.toFixed(2)}**`;
   await channel.send(dupeMsg);
   
   // Post new embed at bottom
@@ -456,7 +461,7 @@ async function handleDupeNow(interaction) {
   session.messageId = newMsg.id;
   await updateSession(interaction.client, session);
   
-  await interaction.reply({ content: `✅ Dupe #${session.dupeCount} recorded! Total: $${session.totalEarnings.toFixed(2)}`, ephemeral: true });
+  await interaction.reply({ content: `✅ Dupe #${session.dupeCount} recorded! Host: $${session.hostTotalEarnings.toFixed(2)} | Posse: $${session.posseTotalEarnings.toFixed(2)} each`, ephemeral: true });
 }
 
 async function handleEnd(interaction) {
