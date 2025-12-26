@@ -45,6 +45,38 @@ const PREFIX = '?';
 const OTHER_BOT_IDS = [process.env.LESTER_BOT_ID, process.env.PAVEL_BOT_ID, process.env.MADAM_BOT_ID, process.env.CHIEF_BOT_ID].filter(Boolean);
 const ALLOWED_CHANNEL_IDS = process.env.ALLOWED_CHANNEL_IDS?.split(',').filter(Boolean) || [];
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// SERVER LOCK & LICENSE SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════════
+const AUTHORIZED_SERVERS = process.env.AUTHORIZED_SERVERS?.split(',') || [];
+const LICENSE_KEY = process.env.LICENSE_KEY || '';
+const LICENSE_SECRET = process.env.LICENSE_SECRET || 'UNPATCHED_METHOD_2024_SECURE';
+
+function validateLicense() {
+  if (!LICENSE_KEY) {
+    console.error('[CRIPPS] ❌ LICENSE KEY MISSING');
+    return false;
+  }
+  const isMasterKey = LICENSE_KEY.startsWith('UNPATCHED-MASTER-');
+  const isOwnerKey = LICENSE_KEY === process.env.MASTER_LICENSE;
+  if (!isMasterKey && !isOwnerKey) {
+    console.error('[CRIPPS] ❌ INVALID LICENSE KEY');
+    return false;
+  }
+  console.log('[CRIPPS] ✅ License validated');
+  return true;
+}
+
+if (!validateLicense()) {
+  console.error('[CRIPPS] Shutting down - invalid license');
+  process.exit(1);
+}
+
+function isAuthorizedServer(guildId) {
+  if (AUTHORIZED_SERVERS.length === 0) return true;
+  return AUTHORIZED_SERVERS.includes(guildId);
+}
+
 const CRIPPS_SYSTEM = `You are Cripps from Red Dead Online. Grizzled camp manager and trader.
 
 CRITICAL: Keep responses SHORT - 2-4 sentences MAX. No essays!
@@ -208,6 +240,9 @@ client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot && !isOtherBot(message.author.id)) return;
   if (message.author.id === client.user.id) return;
   if (!message.guild) { await generateResponse(message); return; }
+  
+  // SERVER LOCK - Ignore unauthorized servers
+  if (!isAuthorizedServer(message.guild.id)) return;
 
   const channelName = message.channel.name;
 
