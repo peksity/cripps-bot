@@ -485,20 +485,35 @@ async function handleEnd(interaction) {
     summary += `**Host:** <@${session.hostId}>\n`;
     summary += `**Posse:** ${session.crew.map(c => `<@${c.userId}>`).join(', ') || 'Solo'}\n\n`;
     if (session.dupeCount > 0) {
-      summary += `💰 **Total Dupes:** ${session.dupeCount}\n`;
-      summary += `💵 **Total Earnings:** $${session.totalEarnings.toFixed(2)}`;
+      summary += `🔄 **Dupes Completed:** ${session.dupeCount}\n\n`;
+      summary += `👑 **Host Earned:** $${(session.hostTotalEarnings || session.hostPay * session.dupeCount).toFixed(2)}\n`;
+      if (session.crew.length > 0) {
+        summary += `🤠 **Posse Earned:** $${(session.posseTotalEarnings || session.possePay * session.dupeCount).toFixed(2)} each`;
+      }
     }
     
     await msg.edit({ 
-      embeds: [new EmbedBuilder().setTitle('🏆 DELIVERY COMPLETE').setDescription(summary).setColor(COLORS.success)], 
+      embeds: [new EmbedBuilder().setTitle('🏆 DELIVERY COMPLETE - GG!').setDescription(summary).setColor(COLORS.success)], 
       components: [] 
     });
   } catch (e) {}
   
+  // Send congrats message in channel
+  const channel = interaction.client.channels.cache.get(session.channelId);
+  if (session.dupeCount > 0) {
+    let congratsMsg = `🎉 **GG ${session.hostUsername}!**\n`;
+    congratsMsg += `👑 Host made: **$${(session.hostTotalEarnings || session.hostPay * session.dupeCount).toFixed(2)}**\n`;
+    if (session.crew.length > 0) {
+      congratsMsg += `🤠 Posse made: **$${(session.posseTotalEarnings || session.possePay * session.dupeCount).toFixed(2)}** each\n`;
+    }
+    congratsMsg += `🔄 Dupes: **${session.dupeCount}**`;
+    await channel.send(congratsMsg);
+  }
+  
   activeSessions.delete(sessionId);
   activeSessions.delete(session.hostId);
   
-  await interaction.reply({ content: `✅ Session ended! ${session.dupeCount > 0 ? `Total dupes: ${session.dupeCount}, Earnings: $${session.totalEarnings.toFixed(2)}` : ''}`, ephemeral: true });
+  await interaction.reply({ content: `✅ Session ended! GG!`, ephemeral: true });
 }
 
 async function handleKick(interaction, subAction) {
